@@ -50,6 +50,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # Add vendor/bin to PATH for easy command execution
 ENV PATH="${PATH}:/var/www/html/vendor/bin"
 
+# Composer install
+COPY ./composer.* ./
+RUN if [ -f "composer.json" ]; then composer install --no-ansi --no-dev --no-interaction --optimize-autoloader; fi
+
 # Setup cron job for drush cron
 RUN echo '* * * * * root PATH=$PATH:/var/www/html/vendor/bin; drush cron >/dev/null 2>&1' >> /etc/crontab
 
