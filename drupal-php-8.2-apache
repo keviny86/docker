@@ -44,11 +44,8 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
         echo 'opcache.enable=1'; \
     } > "$PHP_INI_DIR/conf.d/docker-php.ini"
 
-# Composer install conditional on composer.json presence
-ENV COMPOSER_ALLOW_SUPERUSER=1
-COPY ./composer.* ./
+# Install composer
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
-RUN [ -f composer.json ] && composer install --no-ansi --no-dev --no-interaction --optimize-autoloader || true
 
 # Add vendor/bin to PATH for easy command execution
 ENV PATH="${PATH}:/var/www/html/vendor/bin"
