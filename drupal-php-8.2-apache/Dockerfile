@@ -41,7 +41,6 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
     } > "$PHP_INI_DIR/conf.d/docker-php.ini"
 
 # Install composer
-ENV COMPOSER_ALLOW_SUPERUSER=1
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 # Add vendor/bin to PATH for easy command execution
