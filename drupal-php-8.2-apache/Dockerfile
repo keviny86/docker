@@ -1,4 +1,3 @@
-# Use a lightweight Linux distribution as the base image
 FROM php:8.2-apache
 
 # Set the working directory
@@ -9,7 +8,7 @@ ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf && \
     sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
-# Install system dependencies and PHP extensions
+# Install system dependencies, PHP extensions and Apache mods
 RUN apt-get update && apt-get install -y \
         default-mysql-client \
         libmemcached-dev \
@@ -26,10 +25,8 @@ RUN apt-get update && apt-get install -y \
     && pecl install memcached-3.2.0 \
     && docker-php-ext-enable memcached opcache \
     && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
-    && docker-php-ext-install iconv gd pdo pdo_mysql
-
-# Enable Apache mods
-RUN a2enmod rewrite expires headers
+    && docker-php-ext-install iconv gd pdo pdo_mysql \
+    && a2enmod rewrite expires headers
 
 # Configure PHP
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
@@ -38,21 +35,17 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
         echo 'opcache.memory_consumption=128'; \
         echo 'opcache.interned_strings_buffer=8'; \
         echo 'opcache.max_accelerated_files=4000'; \
-        echo 'opcache.revalidate_freq=2'; \
-        echo 'opcache.fast_shutdown=1'; \
+        echo 'opcache.revalidate_freq=60'; \
         echo 'opcache.enable_cli=1'; \
         echo 'opcache.enable=1'; \
     } > "$PHP_INI_DIR/conf.d/docker-php.ini"
 
 # Install composer
+ENV COMPOSER_ALLOW_SUPERUSER=1
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 # Add vendor/bin to PATH for easy command execution
 ENV PATH="${PATH}:/var/www/html/vendor/bin"
-
-# Composer install
-COPY ./composer.* ./
-RUN if [ -f "composer.json" ]; then composer install --no-ansi --no-dev --no-interaction --optimize-autoloader; fi
 
 # Setup cron job for drush cron
 RUN echo '* * * * * root PATH=$PATH:/var/www/html/vendor/bin; drush cron >/dev/null 2>&1' >> /etc/crontab
