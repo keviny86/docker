@@ -35,7 +35,7 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
         echo 'memory_limit=1024M'; \
         echo 'opcache.memory_consumption=128'; \
         echo 'opcache.interned_strings_buffer=8'; \
-        echo 'opcache.max_accelerated_files=4000'; \
+        echo 'opcache.max_accelerated_files=15000'; \
         echo 'opcache.revalidate_freq=60'; \
         echo 'opcache.enable_cli=1'; \
         echo 'opcache.enable=1'; \
