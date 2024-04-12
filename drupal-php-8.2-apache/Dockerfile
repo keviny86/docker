@@ -43,6 +43,7 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
 
 # Install composer
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
 # Add vendor/bin to PATH for easy command execution
 ENV PATH="${PATH}:/var/www/html/vendor/bin"
