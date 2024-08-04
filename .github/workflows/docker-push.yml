@@ -17,6 +17,9 @@ jobs:
           - context: ./drupal-php-8.2-apache
             dockerfile: Dockerfile
             image_name: keviny86/drupal:php-8.2-apache
+          - context: ./drupal-php-8.3-apache
+            dockerfile: Dockerfile
+            image_name: keviny86/drupal:php-8.3-apache
 
     steps:
     - name: Check out the repo
