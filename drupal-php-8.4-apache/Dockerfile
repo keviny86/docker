@@ -16,7 +16,6 @@ RUN apt-get update && \
         zlib1g-dev \
         libssl-dev \
         git \
-        cron \
         unzip \
         libpng-dev \
         libjpeg-dev \
@@ -49,8 +48,22 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 # Add vendor/bin to PATH for easy command execution
 ENV PATH="${PATH}:/var/www/html/vendor/bin"
 
-# Setup cron job for drush cron
-RUN echo '* * * * * root PATH=$PATH:/var/www/html/vendor/bin; drush cron >/dev/null 2>&1' >> /etc/crontab
+# Supercronic runs drush cron. Unlike cron it passes the container's
+# environment (env_file, environment:) on to its jobs, and logs to stdout.
+ARG TARGETARCH=amd64
+ARG SUPERCRONIC_VERSION=v0.2.49
+RUN case "$TARGETARCH" in \
+        amd64) SUPERCRONIC_SHA256=a53ae236602c7338aba3fbaff40bda6300eae3b9fedb8261eb06cfe3724430c1 ;; \
+        arm64) SUPERCRONIC_SHA256=02aa0cb229ba09050cba6638059dadb9eedc2276632ea43d6a57a2f8c1629dd5 ;; \
+        *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o /usr/local/bin/supercronic \
+        "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}" && \
+    echo "${SUPERCRONIC_SHA256}  /usr/local/bin/supercronic" | sha256sum -c - && \
+    chmod +x /usr/local/bin/supercronic
 
-# Custom command to start cron and Apache
-CMD bash -c "cron && apache2-foreground"
+# Every 30 seconds. Seven fields: second minute hour day month weekday year.
+RUN echo '*/30 * * * * * * drush cron' > /etc/crontab.supercronic
+
+# Start Supercronic and Apache. -quiet logs only failed runs.
+CMD bash -c "supercronic -quiet /etc/crontab.supercronic & apache2-foreground"
