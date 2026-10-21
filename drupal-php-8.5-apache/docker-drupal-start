@@ -1,0 +1,53 @@
+#!/bin/bash
+# Runs Apache plus drush cron as www-data, scheduled by Supercronic.
+# On SIGTERM a running cron finishes and Apache stops gracefully.
+set -u
+
+timeout=${DRUSH_CRON_TIMEOUT:-3600}
+if [[ ! $timeout =~ ^[0-9]+$ ]]; then
+    echo "Invalid DRUSH_CRON_TIMEOUT '$timeout'. Expected seconds, or 0 for no timeout." >&2
+    exit 1
+fi
+crontab=/etc/drush-cron.crontab
+# Cron is skipped while the site is in maintenance mode (e.g. during a deploy),
+# and when that can't be checked
+cat > "$crontab" <<EOF
+${DRUSH_CRON_SCHEDULE:-* * * * *} timeout --kill-after=60 $timeout sh -c 'm=\$(drush state:get system.maintenance_mode) || exit 1; case "\$m" in 1|true) exit 0 ;; esac; exec drush cron'
+EOF
+if ! supercronic -test "$crontab" > /dev/null 2>&1; then
+    echo "Invalid DRUSH_CRON_SCHEDULE '${DRUSH_CRON_SCHEDULE:-}'." >&2
+    exit 1
+fi
+
+# Apache signals its whole process group on stop; keep drush out of it
+setsid apache2-foreground &
+apache_pid=$!
+
+# HOME: www-data's home is not writable. -passthrough-logs prints drush's own
+# output, which is empty on success; -no-reap since this script is PID 1.
+HOME=/tmp setpriv --reuid=www-data --regid=www-data --init-groups \
+    supercronic -quiet -passthrough-logs -no-reap "$crontab" &
+cron_pid=$!
+
+stop() {
+    # SIGWINCH = Apache's graceful stop. Supercronic waits for a running cron.
+    kill -WINCH "$apache_pid" 2>/dev/null
+    kill -TERM "$cron_pid" 2>/dev/null
+    wait "$cron_pid"
+    wait "$apache_pid"
+}
+
+# shellcheck disable=SC2329 # called by the trap below
+shutdown() {
+    trap '' TERM INT
+    echo "Shutting down gracefully." >&2
+    stop
+    exit 0
+}
+trap shutdown TERM INT
+
+wait -n "$apache_pid" "$cron_pid"
+status=$?
+echo "Apache or Supercronic exited unexpectedly with status $status." >&2
+stop
+exit "$status"

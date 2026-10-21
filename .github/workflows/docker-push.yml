@@ -2,42 +2,170 @@ name: Build and push docker images
 
 on:
   workflow_dispatch:
+  # Weekly rebuild for security updates (paused after 60 days without repo activity)
+  schedule:
+    - cron: '0 3 * * 1'
   push:
     branches:
       - main
     paths:
-      - '**/Dockerfile*'
+      - 'drupal-php-*/**'
+      - 'tests/**'
+      - '.hadolint.yaml'
+      - '.github/workflows/docker-push.yml'
+  # Pull requests are linted and tested, never pushed
+  pull_request:
+    paths:
+      - 'drupal-php-*/**'
+      - 'tests/**'
+      - '.hadolint.yaml'
+      - '.github/workflows/docker-push.yml'
+
+permissions:
+  contents: read
+
+# Avoid two runs pushing the same tags at once
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-push:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out the repo
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Lint
+      run: tests/lint.sh
+
+  test:
+    needs: lint
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - context: ./drupal-php-8.2-apache
-            dockerfile: Dockerfile
-            image_name: keviny86/drupal:php-8.2-apache
-          - context: ./drupal-php-8.3-apache
-            dockerfile: Dockerfile
-            image_name: keviny86/drupal:php-8.3-apache
-          - context: ./drupal-php-8.4-apache
-            dockerfile: Dockerfile
-            image_name: keviny86/drupal:php-8.4-apache
+          - context: ./drupal-php-8.5-apache
+            image_name: keviny86/drupal:php-8.5-apache
+            arm64: true
 
     steps:
     - name: Check out the repo
-      uses: actions/checkout@v2
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v1
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Set up QEMU
+      if: matrix.arm64
+      uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v2
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    # Scheduled and manual runs build fresh, so tests see the latest packages.
+    # The push job reuses these layers, so it publishes what was tested.
+    - name: Build image (amd64)
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: ${{ matrix.context }}
-        file: ${{ matrix.context }}/${{ matrix.dockerfile }}
+        platforms: linux/amd64
+        pull: true
+        load: true
+        tags: drupal-test:amd64
+        no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        cache-from: type=gha,scope=${{ matrix.image_name }}-amd64
+        cache-to: type=gha,mode=max,scope=${{ matrix.image_name }}-amd64
+
+    - name: Smoke tests
+      run: tests/smoke.sh drupal-test:amd64
+
+    - name: Cron and shutdown tests
+      run: tests/cron.sh drupal-test:amd64
+
+    - name: Drupal site tests
+      run: tests/drupal.sh drupal-test:amd64
+
+    - name: Vulnerability scan
+      run: tests/scan.sh drupal-test:amd64
+
+    - name: Build image (arm64)
+      if: matrix.arm64
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ matrix.context }}
+        platforms: linux/arm64
+        pull: true
+        load: true
+        tags: drupal-test:arm64
+        no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        cache-from: type=gha,scope=${{ matrix.image_name }}-arm64
+        cache-to: type=gha,mode=max,scope=${{ matrix.image_name }}-arm64
+
+    # Full tests under emulation would be very slow
+    - name: PHP checks (arm64)
+      if: matrix.arm64
+      run: tests/smoke.sh drupal-test:arm64 --php-only
+
+  build-and-push:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      # Still publish the other images if one fails
+      fail-fast: false
+      matrix:
+        include:
+          - context: ./drupal-php-8.2-apache
+            image_name: keviny86/drupal:php-8.2-apache
+            platforms: linux/amd64
+          - context: ./drupal-php-8.3-apache
+            image_name: keviny86/drupal:php-8.3-apache
+            platforms: linux/amd64
+          - context: ./drupal-php-8.4-apache
+            image_name: keviny86/drupal:php-8.4-apache
+            platforms: linux/amd64
+          # Built and tested by the test job; pushed from its cache
+          - context: ./drupal-php-8.5-apache
+            image_name: keviny86/drupal:php-8.5-apache
+            platforms: linux/amd64,linux/arm64
+            tested: true
+
+    # Pinned to SHAs since they get the Docker Hub credentials; updated by Dependabot
+    steps:
+    - name: Check out the repo
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # Dated tag (e.g. php-8.5-apache-20261021) for rollbacks
+    - name: Get build date
+      id: date
+      run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+    # Untested images only use the cache on pushes, so rebuilds get fresh apt
+    # packages. Tested images always use the fresh cache from the test job.
+    - name: Build and push Docker image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ matrix.context }}
+        platforms: ${{ matrix.platforms }}
+        pull: true
         push: true
-        tags: ${{ matrix.image_name }}
+        no-cache: ${{ github.event_name != 'push' && !matrix.tested }}
+        cache-from: |
+          type=gha,scope=${{ matrix.image_name }}
+          type=gha,scope=${{ matrix.image_name }}-amd64
+          type=gha,scope=${{ matrix.image_name }}-arm64
+        cache-to: ${{ !matrix.tested && format('type=gha,mode=max,scope={0}', matrix.image_name) || '' }}
+        tags: |
+          ${{ matrix.image_name }}
+          ${{ matrix.image_name }}-${{ steps.date.outputs.date }}
