@@ -1,0 +1,4 @@
+failure-threshold: warning
+ignored:
+  # Pinning apt package versions breaks builds when Debian ships security fixes
+  - DL3008
