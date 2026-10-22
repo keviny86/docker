@@ -7,6 +7,9 @@ source "$(dirname "$0")/lib.sh"
 
 image=$1
 net=drupal-test-$$
+# Drupal 11 needs PHP 8.3 or later
+php_version=$(docker run --rm --entrypoint php "$image" -r 'echo PHP_VERSION_ID;')
+if [ "$php_version" -lt 80300 ]; then drupal=^10; else drupal=^11; fi
 db=$net-db
 web=$net-web
 
@@ -27,8 +30,8 @@ for _ in $(seq 1 60); do
     docker exec "$db" healthcheck.sh --connect > /dev/null 2>&1 && break
     sleep 1
 done
-check "composer create-project drupal/recommended-project" \
-    as_root composer create-project drupal/recommended-project . --no-interaction --no-progress
+check "composer create-project drupal/recommended-project:$drupal" \
+    as_root composer create-project "drupal/recommended-project:$drupal" . --no-interaction --no-progress
 check "composer require drush/drush" as_root composer require drush/drush --no-interaction --no-progress
 check "drush site:install" as_root drush site:install minimal -y --site-name=Test \
     --db-url=mysql://drupal:drupal@database/drupal

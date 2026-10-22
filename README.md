@@ -6,14 +6,14 @@ Base images for running Drupal sites in production: PHP with Apache, the PHP ext
 
 | Tag | PHP | Platforms |
 |---|---|---|
-| `php-8.5-apache` | 8.5 (Debian trixie) | amd64, arm64 |
-| `php-8.4-apache` | 8.4 | amd64 |
-| `php-8.3-apache` | 8.3 | amd64 |
-| `php-8.2-apache` | 8.2 | amd64 |
+| `php-8.5-apache` | 8.5 | amd64, arm64 |
+| `php-8.4-apache` | 8.4 | amd64, arm64 |
+| `php-8.3-apache` | 8.3 | amd64, arm64 |
+| `php-8.2-apache` | 8.2 | amd64, arm64 |
 
-Images are rebuilt every Monday to pick up PHP and Debian security updates. Each build is also tagged with its date, for example `php-8.5-apache-20261026`; pin to a dated tag to roll back or to keep builds reproducible.
+All tags are built from the same Dockerfile on Debian trixie; only the PHP version differs. Images are rebuilt every Monday to pick up PHP and Debian security updates. Each build is also tagged with its date, for example `php-8.5-apache-20261026`; pin to a dated tag to roll back or to keep builds reproducible.
 
-This page describes `php-8.5-apache`. The 8.2–8.4 tags use an older setup, see [Older tags](#older-tags-82-84).
+Using an 8.2–8.4 tag from before October 2026? See [Upgrading from older builds](#upgrading-from-older-builds).
 
 ## What's included
 
@@ -134,6 +134,8 @@ The MariaDB client in the image (11.8) requires TLS by default. If your database
 'pdo' => [\Pdo\Mysql::ATTR_SSL_VERIFY_SERVER_CERT => FALSE],
 ```
 
+On PHP 8.2 and 8.3, use `\PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT` instead.
+
 ## Adding PHP extensions
 
 The compilers are kept in the image, so sites can install more extensions:
@@ -149,21 +151,23 @@ RUN apt-get update && \
 
 ## Tests
 
-Every build of `php-8.5-apache` is tested before it is published: the PHP setup, Apache configuration, cron and shutdown behaviour, a real Drupal install against MariaDB, and a scan for critical vulnerabilities that have a fix. To run the tests locally, from the source repository:
+Every image is tested before it is published: the PHP setup, Apache configuration, cron and shutdown behaviour, a real Drupal install against MariaDB, and a scan for critical vulnerabilities that have a fix. To run the tests locally, from the source repository:
 
 ```sh
 tests/lint.sh
-docker build -t drupal-test drupal-php-8.5-apache
+docker build --build-arg PHP_VERSION=8.5 -t drupal-test drupal
 tests/smoke.sh drupal-test
 tests/cron.sh drupal-test
 tests/drupal.sh drupal-test
 tests/scan.sh drupal-test
 ```
 
-## Older tags (8.2–8.4)
+## Upgrading from older builds
 
-The 8.2–8.4 tags have not been updated to the setup above:
+Until October 2026 the 8.2–8.4 tags ran drush cron as root (through Debian's cron on 8.2 and 8.3, every 30 seconds on 8.4), and had no Debian trixie base, graceful shutdown or the settings above. When a site moves to a current build:
 
-- drush cron runs as root: every minute through Debian's cron on 8.2 and 8.3 (output discarded), every 30 seconds through Supercronic on 8.4
-- No graceful shutdown, maintenance-mode check, timeout or environment variables for cron
-- Older PHP and Apache settings (for example `memory_limit=1024M`, no APCu, Apache version shown in headers)
+- **Files owned by root:** cron and drush now run as `www-data`, so files the old root cron created can't be changed. Run `find web/sites/default/files ! -user www-data -exec chown www-data:www-data {} +` in the container once, before running drush.
+- **Debian's cron is gone:** jobs a site image added to `/etc/crontab` don't run any more. Move them to [`/etc/supercronic.d/`](#extra-jobs).
+- **Cron schedule:** the default is every minute; set `DRUSH_CRON_SCHEDULE` to keep another schedule, such as 8.4's `*/30 * * * * * *`.
+- **Shutdown:** set `stop_grace_period`, see [Graceful shutdown](#graceful-shutdown).
+- **`drush sql:*`:** with a database server without TLS, add the setting from [Running drush](#running-drush).
