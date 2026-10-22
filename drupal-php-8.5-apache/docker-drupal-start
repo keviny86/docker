@@ -1,5 +1,6 @@
 #!/bin/bash
-# Runs Apache plus drush cron as www-data, scheduled by Supercronic.
+# Runs Apache plus drush cron as www-data, scheduled by Supercronic, along with
+# any jobs in /etc/supercronic.d/*.crontab.
 # On SIGTERM a running cron finishes and Apache stops gracefully.
 set -u
 
@@ -18,6 +19,15 @@ if ! supercronic -test "$crontab" > /dev/null 2>&1; then
     echo "Invalid DRUSH_CRON_SCHEDULE '${DRUSH_CRON_SCHEDULE:-}'." >&2
     exit 1
 fi
+# Extra jobs a site image adds, e.g. cleanups
+for extra in /etc/supercronic.d/*.crontab; do
+    [ -f "$extra" ] || continue
+    if ! supercronic -test "$extra" > /dev/null 2>&1; then
+        echo "Invalid crontab $extra." >&2
+        exit 1
+    fi
+    { cat "$extra"; echo; } >> "$crontab"
+done
 
 # Apache signals its whole process group on stop; keep drush out of it
 setsid apache2-foreground &

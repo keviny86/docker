@@ -45,6 +45,11 @@ expect_match "invalid schedule is reported" "Invalid DRUSH_CRON_SCHEDULE" "$out"
 out=$(docker run --rm -e DRUSH_CRON_TIMEOUT=1h "$image" 2>&1); status=$?
 expect_eq "invalid timeout exits with 1" 1 "$status"
 expect_match "invalid timeout is reported" "Invalid DRUSH_CRON_TIMEOUT" "$out"
+make_tmpdir
+echo "not a crontab line" > "$tmpdir/bad.crontab"
+out=$(docker run --rm -v "$tmpdir/bad.crontab:/etc/supercronic.d/bad.crontab:ro" "$image" 2>&1); status=$?
+expect_eq "invalid extra crontab exits with 1" 1 "$status"
+expect_match "invalid extra crontab is reported" "Invalid crontab /etc/supercronic.d/bad.crontab" "$out"
 
 site basic -e DRUSH_CRON_SCHEDULE="$every_second" -e FOO=bar
 basic=$site_name basic_dir=$site_dir
@@ -62,6 +67,11 @@ site overlap -e DRUSH_CRON_SCHEDULE="$every_second" -e FAKE_SLEEP=3
 overlap=$site_name overlap_dir=$site_dir
 site graceful -e DRUSH_CRON_SCHEDULE="$every_second" -e FAKE_SLEEP=5
 graceful=$site_name graceful_dir=$site_dir
+make_tmpdir
+extra_crontab=$tmpdir/extra.crontab
+echo "$every_second"' echo "extra user=$(id -un)" >> /var/www/html/log/extra.log' > "$extra_crontab"
+site extra -e DRUSH_CRON_SCHEDULE='0 0 1 1 *' -v "$extra_crontab:/etc/supercronic.d/extra.crontab:ro"
+extra_dir=$site_dir
 site idle -e DRUSH_CRON_SCHEDULE='0 0 1 1 *'
 idle=$site_name
 site crash -e DRUSH_CRON_SCHEDULE='0 0 1 1 *'
@@ -84,6 +94,9 @@ expect_match "cron runs" "^start " "$log"
 expect_match "as www-data with HOME=/tmp" "user=www-data home=/tmp" "$log"
 expect_match "with the container's environment" "foo=bar" "$log"
 expect_no_match "successful runs log nothing" "error|drush" "$(docker logs "$basic" 2>&1 | grep -v AH00)"
+
+echo "Extra jobs"
+expect_match "jobs from /etc/supercronic.d run as www-data" "^extra user=www-data$" "$(cat "$extra_dir/log/extra.log" 2>/dev/null)"
 
 echo "Maintenance mode"
 expect_eq "skipped when state:get prints 1" "" "$(drush_log "$maint_dir")"

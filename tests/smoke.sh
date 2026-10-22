@@ -22,6 +22,8 @@ expect_eq "gd supports JPEG, WebP and FreeType" "111" \
 expect_eq "no missing shared libraries" "" "$(in_image 'ldd "$(php-config --extension-dir)"/*.so | grep "not found"')"
 expect_eq "build dependencies purged" "" "$(in_image 'dpkg -l libmemcached-dev libpng-dev libzip-dev 2>/dev/null | grep ^ii')"
 
+check "/etc/supercronic.d exists for extra jobs" docker run --rm --platform "$platform" --entrypoint test "$image" -d /etc/supercronic.d
+
 echo "Tools"
 for cmd in 'composer --version' 'git --version' 'unzip -v' 'mariadb --version' 'supercronic -version'; do
     check "$cmd" docker run --rm --platform "$platform" --entrypoint bash "$image" -c "$cmd"

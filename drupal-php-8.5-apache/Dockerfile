@@ -99,7 +99,8 @@ RUN case "$TARGETARCH" in \
     curl -fsSL -o /usr/local/bin/supercronic \
         "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}" && \
     echo "${SUPERCRONIC_SHA256}  /usr/local/bin/supercronic" | sha256sum -c - && \
-    chmod +x /usr/local/bin/supercronic
+    chmod +x /usr/local/bin/supercronic && \
+    mkdir /etc/supercronic.d
 
 # Apache plus drush cron. DRUSH_CRON_SCHEDULE uses cron syntax (in TZ),
 # DRUSH_CRON_TIMEOUT is in seconds (0 = none)

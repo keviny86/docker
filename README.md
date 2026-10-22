@@ -77,6 +77,15 @@ drush cron runs inside the container, next to Apache:
 
 When running several replicas, cron runs in each of them; Drupal's cron lock makes sure only one run happens at a time.
 
+### Extra jobs
+
+A site image can add its own jobs as crontab files in `/etc/supercronic.d/`. They run as `www-data` next to drush cron, and their output appears in `docker logs`. Unlike drush cron, they also run in maintenance mode and have no timeout.
+
+```dockerfile
+RUN echo '0 * * * * find /tmp -maxdepth 1 -name "*.tmp" -mmin +60 -delete' \
+    > /etc/supercronic.d/cleanup.crontab
+```
+
 ## Graceful shutdown
 
 On `SIGTERM` (`docker stop`, Kubernetes) the container:
