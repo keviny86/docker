@@ -1,4 +1,6 @@
-FROM php:8.5-apache-trixie
+# One Dockerfile for all PHP versions; CI builds it with each PHP_VERSION
+ARG PHP_VERSION=8.5
+FROM php:${PHP_VERSION}-apache-trixie
 
 # Fail on errors anywhere in a pipeline
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

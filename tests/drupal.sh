@@ -7,6 +7,9 @@ source "$(dirname "$0")/lib.sh"
 
 image=$1
 net=drupal-test-$$
+# Drupal 11 needs PHP 8.3 or later
+php_version=$(docker run --rm --entrypoint php "$image" -r 'echo PHP_VERSION_ID;')
+if [ "$php_version" -lt 80300 ]; then drupal=^10; else drupal=^11; fi
 db=$net-db
 web=$net-web
 
@@ -14,8 +17,10 @@ make_network "$net"
 start_container "$db" --network "$net" --network-alias database \
     -e MARIADB_DATABASE=drupal -e MARIADB_USER=drupal -e MARIADB_PASSWORD=drupal \
     -e MARIADB_RANDOM_ROOT_PASSWORD=1 mariadb:11.8
+# Cron must not run while the site is being installed; it gets its own
+# container below
 start_container "$web" --network "$net" -e DRUSH_OPTIONS_URI=http://localhost \
-    -e DRUSH_CRON_SCHEDULE='*/5 * * * * * *' "$image"
+    -e DRUSH_CRON_SCHEDULE='0 0 1 1 *' "$image"
 
 as_root() { docker exec "$web" "$@"; }
 d() { docker exec -u www-data -e HOME=/tmp "$web" drush "$@"; }
@@ -27,8 +32,8 @@ for _ in $(seq 1 60); do
     docker exec "$db" healthcheck.sh --connect > /dev/null 2>&1 && break
     sleep 1
 done
-check "composer create-project drupal/recommended-project" \
-    as_root composer create-project drupal/recommended-project . --no-interaction --no-progress
+check "composer create-project drupal/recommended-project:$drupal" \
+    as_root composer create-project "drupal/recommended-project:$drupal" . --no-interaction --no-progress
 check "composer require drush/drush" as_root composer require drush/drush --no-interaction --no-progress
 check "drush site:install" as_root drush site:install minimal -y --site-name=Test \
     --db-url=mysql://drupal:drupal@database/drupal
@@ -52,6 +57,12 @@ expect_match "drush sql:connect" "connect-ok" \
     "$(docker exec -u www-data -e HOME=/tmp "$web" bash -c '$(drush sql:connect) -N -e "select \"connect-ok\""' 2>&1)"
 
 echo "Cron"
+# A fresh container from a snapshot of the installed site, with cron every 5s
+logs=$(docker logs "$web" 2>&1)
+commit_container "$web" "$net-site"
+docker rm -f "$web" > /dev/null
+start_container "$web" --network "$net" -e DRUSH_OPTIONS_URI=http://localhost \
+    -e DRUSH_CRON_SCHEDULE='*/5 * * * * * *' "$net-site"
 # The maintenance check in the crontab relies on these exact values
 d state:set system.maintenance_mode 1 > /dev/null 2>&1
 expect_eq "state:get prints 1 for drush state:set 1" 1 "$(d state:get system.maintenance_mode 2>/dev/null)"
@@ -68,7 +79,7 @@ if [ "${cron_runs:-0}" -ge 1 ] 2> /dev/null; then pass "scheduled cron runs ($cr
 echo "Logs and files"
 expect_eq "no PHP errors or warnings in Drupal's log" 0 \
     "$(sql "select count(*) from watchdog where type = 'php' and severity <= 4")"
-logs=$(docker logs "$web" 2>&1)
+logs+=$'\n'$(docker logs "$web" 2>&1)
 expect_no_match "no PHP warnings in the container log" "PHP (Warning|Fatal|Deprecated)" "$logs"
 expect_eq "cron and drush leave no root-owned files" "" \
     "$(as_root find web/sites/default/files -user root)"

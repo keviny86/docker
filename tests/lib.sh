@@ -6,6 +6,7 @@ failures=0
 containers=()
 tmpdirs=()
 networks=()
+images=()
 
 pass() { echo "  ok    $*"; }
 fail() { echo "  FAIL  $*"; failures=$((failures + 1)); }
@@ -33,9 +34,14 @@ expect_match() {
     if grep -qE -- "$2" <<< "$3"; then pass "$1"; else fail "$1 (no match for '$2')"; fi
 }
 
-# expect_no_match DESCRIPTION REGEX TEXT
+# expect_no_match DESCRIPTION REGEX TEXT: on failure shows the first matches
 expect_no_match() {
-    if grep -qE -- "$2" <<< "$3"; then fail "$1 (unexpected '$2')"; else pass "$1"; fi
+    if grep -qE -- "$2" <<< "$3"; then
+        fail "$1 (unexpected '$2')"
+        grep -E -- "$2" <<< "$3" | head -n 3 | cut -c1-300 | sed 's/^/        /'
+    else
+        pass "$1"
+    fi
 }
 
 # start_container NAME DOCKER_RUN_ARGS...: removed again when the script exits
@@ -44,6 +50,13 @@ start_container() {
     shift
     containers+=("$name")
     docker run -d --name "$name" "$@" > /dev/null
+}
+
+# commit_container CONTAINER IMAGE: snapshots a container, removed again when
+# the script exits
+commit_container() {
+    images+=("$2")
+    docker commit "$1" "$2" > /dev/null
 }
 
 # make_network NAME: creates a network, removed again when the script exits
@@ -62,6 +75,9 @@ make_tmpdir() {
 cleanup() {
     if [ "${#containers[@]}" -gt 0 ]; then
         docker rm -f "${containers[@]}" > /dev/null 2>&1
+    fi
+    if [ "${#images[@]}" -gt 0 ]; then
+        docker rmi "${images[@]}" > /dev/null 2>&1
     fi
     if [ "${#networks[@]}" -gt 0 ]; then
         docker network rm "${networks[@]}" > /dev/null 2>&1
