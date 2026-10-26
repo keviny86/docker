@@ -2,9 +2,11 @@ name: Build and push docker images
 
 on:
   workflow_dispatch:
-  # Weekly rebuild for security updates (paused after 60 days without repo activity)
+  # Weekly rebuild for security updates (paused after 60 days without repo activity).
+  # Not on the hour: GitHub delays or even drops scheduled runs at busy times.
   schedule:
-    - cron: '0 3 * * 1'
+    - cron: '30 2 * * 1'
+      timezone: Europe/Stockholm
   push:
     branches:
       - main
