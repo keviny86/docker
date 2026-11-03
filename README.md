@@ -13,7 +13,7 @@ Source and issues: https://github.com/keviny86/docker
 | `php-8.3-apache` | 8.3 | amd64, arm64 |
 | `php-8.2-apache` | 8.2 | amd64, arm64 |
 
-All tags are built from the same Dockerfile on Debian trixie; only the PHP version differs. Images are rebuilt every Monday to pick up PHP and Debian security updates. Each build is also tagged with its date, for example `php-8.5-apache-20261026`; pin to a dated tag to roll back or to keep builds reproducible.
+All tags are built from the same Dockerfile on Debian trixie; only the PHP version differs. Images are rebuilt every Saturday to pick up PHP and Debian security updates. Each build is also tagged with its date, for example `php-8.5-apache-20261026`; pin to a dated tag to roll back or to keep builds reproducible.
 
 Using an 8.2–8.4 tag from before October 2026? See [Upgrading from older builds](#upgrading-from-older-builds).
 

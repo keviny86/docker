@@ -3,9 +3,8 @@ name: Build and push docker images
 on:
   workflow_dispatch:
   # Weekly rebuild for security updates (paused after 60 days without repo activity).
-  # Not on the hour: GitHub delays or even drops scheduled runs at busy times.
   schedule:
-    - cron: '30 2 * * 1'
+    - cron: '18 21 * * 6'
       timezone: Europe/Stockholm
   push:
     branches:
@@ -14,14 +13,12 @@ on:
       - 'drupal/**'
       - 'tests/**'
       - '.hadolint.yaml'
-      - '.github/workflows/docker-push.yml'
   # Pull requests are linted and tested, never pushed
   pull_request:
     paths:
       - 'drupal/**'
       - 'tests/**'
       - '.hadolint.yaml'
-      - '.github/workflows/docker-push.yml'
 
 permissions:
   contents: read
